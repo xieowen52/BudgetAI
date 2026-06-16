@@ -27,6 +27,14 @@ export default function BudgetsPage() {
 
   useEffect(() => { fetchData() }, [])
 
+  // Pre-fill the amount with the selected category's current limit (B-2),
+  // so editing shows the existing value instead of a blank field. Keyed on
+  // category + budgets, so typing (which changes neither) is never clobbered.
+  useEffect(() => {
+    const existing = budgets.find((b) => b.category === category)
+    setLimit(existing ? String(existing.monthly_limit) : '')
+  }, [category, budgets])
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -49,7 +57,10 @@ export default function BudgetsPage() {
   }
 
   const coveredCategories = new Set(budgets.map((b) => b.category))
-  const uncoveredCategories = CATEGORIES.filter((c) => !coveredCategories.has(c))
+  // Stable alphabetical order so the list doesn't jump after each save (B-3)
+  const sortedProgress = [...progress].sort((a, b) =>
+    CATEGORY_LABELS[a.category].localeCompare(CATEGORY_LABELS[b.category])
+  )
 
   return (
     <div className="space-y-6">
@@ -61,7 +72,7 @@ export default function BudgetsPage() {
       {/* Set / update a limit */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <p className="text-sm font-semibold text-slate-700 mb-4">
-          {uncoveredCategories.length > 0 ? 'Add a budget limit' : 'Update a budget limit'}
+          {coveredCategories.has(category) ? 'Update a budget limit' : 'Set a budget limit'}
         </p>
         <form onSubmit={handleSubmit} className="flex gap-3 items-end">
           <div>
@@ -108,7 +119,7 @@ export default function BudgetsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-          {progress.map((item) => {
+          {sortedProgress.map((item) => {
             const pct = Math.min(item.percentage, 100)
             return (
               <div key={item.category} className="px-6 py-4">
