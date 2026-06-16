@@ -143,6 +143,36 @@ export default function DashboardPage() {
   const [quickAdd, setQuickAdd] = useState<'expense' | 'income' | null>(null)
 
   const [planStatus, setPlanStatus] = useState<PlanStatus | null>(null)
+  const [demoBusy, setDemoBusy] = useState(false)
+
+  function refetchAll() {
+    fetchMonthly()
+    api.get<Transaction[]>('/transactions/').then((r) => setAllTransactions(r.data))
+    fetchPlanStatus()
+  }
+
+  async function loadDemo() {
+    if (allTransactions.length > 0 &&
+        !confirm('This replaces your current data with a sample financial history. Continue?')) return
+    setDemoBusy(true)
+    try {
+      await api.post('/demo/seed')
+      refetchAll()
+    } finally {
+      setDemoBusy(false)
+    }
+  }
+
+  async function clearAll() {
+    if (!confirm('Delete all your transactions, plan, and recurring items? This cannot be undone.')) return
+    setDemoBusy(true)
+    try {
+      await api.delete('/demo/clear')
+      refetchAll()
+    } finally {
+      setDemoBusy(false)
+    }
+  }
 
   function fetchMonthly() {
     setLoading(true)
@@ -246,6 +276,26 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* First-run demo prompt — only when there's no data yet */}
+      {!loading && allTransactions.length === 0 && (
+        <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl p-5 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">👋 New here? Load a sample history.</p>
+            <p className="text-sm text-slate-500 mt-0.5">
+              A few months of demo transactions and a budget plan, so you can see analysis,
+              budgets, and burn-rate in action right away.
+            </p>
+          </div>
+          <button
+            onClick={loadDemo}
+            disabled={demoBusy}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors flex-shrink-0"
+          >
+            {demoBusy ? 'Loading…' : 'Load demo data'}
+          </button>
+        </div>
+      )}
 
       {/* Summary cards + quick-add */}
       <div className="grid grid-cols-4 gap-4">
@@ -539,6 +589,20 @@ export default function DashboardPage() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Demo data controls — reset or wipe, available once there's data */}
+      {allTransactions.length > 0 && (
+        <div className="text-center text-xs text-slate-400 pt-2">
+          Demo data:{' '}
+          <button onClick={loadDemo} disabled={demoBusy} className="hover:text-indigo-500 underline disabled:opacity-50">
+            reset to sample history
+          </button>
+          {' · '}
+          <button onClick={clearAll} disabled={demoBusy} className="hover:text-red-500 underline disabled:opacity-50">
+            clear everything
+          </button>
+        </div>
+      )}
 
       {/* Quick-add modal */}
       {quickAdd && (

@@ -305,22 +305,13 @@ async def preview_plan(
     )
 
 
-@router.post("/", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
-async def create_plan(
-    payload: PlanCreate,
-    user_id: str = Depends(get_current_user_id),
-    db: Client = Depends(get_supabase),
-):
-    """Create the user's budget plan from the wizard inputs.
+def persist_plan(user_id: str, payload: PlanCreate, db: Client) -> dict:
+    """Run the engine and write the plan, allocations, and synced budgets.
 
-    One plan per user: an existing plan is replaced (delete cascades to
-    its allocations). Allocations are materialized per month so future
-    irregular-event features can adjust individual months.
-
-    Also syncs the plan's per-category amounts into the budgets table so
-    the Budgets page's limits and progress bars reflect the plan without
-    re-entering them. Deleting a plan leaves budgets in place — they are
-    user-editable on their own after creation.
+    Shared by the wizard's create endpoint and the demo seeder so both
+    take the identical persistence path. Replaces any existing plan
+    (delete cascades to allocations/events/income changes). Returns the
+    new plan row. Raises HTTPException(400) on an infeasible budget.
     """
     result = _run_engine(payload)
     start = payload.start_date.replace(day=1)
@@ -375,6 +366,27 @@ async def create_plan(
             budget_rows, on_conflict="user_id,category"
         ).execute()
 
+    return plan_row
+
+
+@router.post("/", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
+async def create_plan(
+    payload: PlanCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase),
+):
+    """Create the user's budget plan from the wizard inputs.
+
+    One plan per user: an existing plan is replaced (delete cascades to
+    its allocations). Allocations are materialized per month so future
+    irregular-event features can adjust individual months.
+
+    Also syncs the plan's per-category amounts into the budgets table so
+    the Budgets page's limits and progress bars reflect the plan without
+    re-entering them. Deleting a plan leaves budgets in place — they are
+    user-editable on their own after creation.
+    """
+    plan_row = persist_plan(user_id, payload, db)
     return _build_plan_response(plan_row, _fetch_allocations(plan_row["id"], db), [])
 
 
