@@ -1,5 +1,8 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
+} from 'recharts'
 import api from '../api/client'
 import {
   CATEGORIES,
@@ -15,14 +18,23 @@ function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
+function fmt0(n: number) {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export default function PlanPage() {
+  const navigate = useNavigate()
   const [plan, setPlan] = useState<Plan | null>(null)
   const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(0)
+
+  // What-if explorer
+  const [wiCat, setWiCat] = useState<Category>('food')
+  const [wiDelta, setWiDelta] = useState(0) // $/month change; negative = spend less
 
   // Add income-change form
   const [icAmount, setIcAmount] = useState('')
@@ -163,6 +175,53 @@ export default function PlanPage() {
   })
   const { summary } = plan
   const isPot = plan.funding_mode === 'pot'
+  const horizon = plan.horizon_months
+  const monthsAnalyzed = analysis?.months_analyzed ?? 0
+
+  // Goal trajectory: planned line over the full horizon plus the actual
+  // line for elapsed months. Income mode climbs toward the savings goal;
+  // pot mode descends toward the leftover target.
+  const potSpendPerMonth = isPot && plan.total_funds != null
+    ? (plan.total_funds - plan.savings_goal) / horizon
+    : 0
+  let cumActual = 0
+  const goalData = plan.months.map((m, i) => {
+    const planned = isPot
+      ? Math.round((plan.total_funds! - potSpendPerMonth * (i + 1)) * 100) / 100
+      : Math.round(summary.monthly_savings * (i + 1) * 100) / 100
+    let actual: number | null = null
+    if (analysis && i < monthsAnalyzed) {
+      if (isPot) {
+        actual = analysis.months[i].remaining_funds
+      } else {
+        cumActual += analysis.months[i].savings_actual
+        actual = Math.round(cumActual * 100) / 100
+      }
+    }
+    return { label: `${MONTHS[m.month - 1]}`, planned, actual }
+  })
+
+  // What-if: shift one category's monthly spend and recompute the impact
+  // against the elapsed months (pure arithmetic over the analysis data).
+  const whatIf = (() => {
+    if (!analysis || monthsAnalyzed === 0) return null
+    let actualTotal = 0
+    let plannedTotal = 0
+    let found = false
+    for (const m of analysis.months) {
+      const c = m.categories.find((x) => x.category === wiCat)
+      if (c) { actualTotal += c.actual; plannedTotal += c.planned; found = true }
+    }
+    if (!found) return null
+    const newActualTotal = Math.max(0, actualTotal + wiDelta * monthsAnalyzed)
+    return {
+      n: monthsAnalyzed,
+      saved: actualTotal - newActualTotal, // positive = saved more
+      newMonthlyAvg: newActualTotal / monthsAnalyzed,
+      plannedMonthly: plannedTotal / monthsAnalyzed,
+    }
+  })()
+  const wiCategories = analysis?.months[0]?.categories.map((c) => c.category) ?? CATEGORIES
 
   return (
     <div className="space-y-6">
@@ -175,9 +234,16 @@ export default function PlanPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/plan/new" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+          <button
+            onClick={() => {
+              if (confirm('Start a new plan? This replaces your current plan once you finish the wizard. Your transactions are not affected.')) {
+                navigate('/plan/new')
+              }
+            }}
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+          >
             Start over
-          </Link>
+          </button>
           <button onClick={deletePlan} className="text-sm font-medium text-slate-400 hover:text-red-500 transition-colors">
             Delete
           </button>
@@ -219,6 +285,59 @@ export default function PlanPage() {
           🎯 Saving {fmt(summary.monthly_savings)}/month puts you at{' '}
           <span className="font-semibold">{fmt(plan.savings_goal)}</span> by{' '}
           {MONTHS[lastMonth.month - 1]} {lastMonth.year}.
+        </div>
+      )}
+
+      {/* Goal trajectory: planned pace vs. actual */}
+      {plan.savings_goal > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm font-semibold text-slate-700">
+              {isPot ? 'Will the money last?' : 'Savings goal progress'}
+            </p>
+            <span className="text-xs text-slate-400">
+              Target: {fmt(plan.savings_goal)}{isPot ? ' left' : ' saved'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            {monthsAnalyzed > 0
+              ? isPot
+                ? 'Your actual balance against the planned spend-down pace.'
+                : 'Your actual savings against the planned pace.'
+              : 'The planned pace — your actual line appears after your first full month.'}
+          </p>
+          <ResponsiveContainer width="100%" height={240} debounce={1}>
+            <LineChart data={goalData} margin={{ top: 5, right: 8, bottom: 0, left: 8 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(v) => fmt0(Number(v))} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={56} />
+              <Tooltip
+                formatter={(v, name) => [fmt(Number(v)), name === 'planned' ? 'Planned' : 'Actual']}
+                contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
+              />
+              <ReferenceLine y={plan.savings_goal} stroke="#22c55e" strokeDasharray="4 4"
+                label={{ value: 'Goal', position: 'right', fontSize: 11, fill: '#22c55e' }} />
+              <Line type="monotone" dataKey="planned" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+              {/* Hold the actual line until analysis resolves, so it doesn't
+                  flash as disconnected dots while loading (C-1). */}
+              {!analysisLoading && (
+                <Line type="monotone" dataKey="actual" stroke="#6366f1" strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#6366f1' }} connectNulls={false} isAnimationActive={false} />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+          {monthsAnalyzed > 0 && (() => {
+            const last = goalData[monthsAnalyzed - 1]
+            if (last.actual == null) return null
+            // Income: more saved than planned. Pot: higher balance = spent slower. Same test.
+            const ahead = last.actual >= last.planned
+            return (
+              <p className={`text-xs mt-2 font-medium ${ahead ? 'text-green-600' : 'text-amber-600'}`}>
+                {ahead
+                  ? `✅ ${isPot ? 'Spending slower than planned' : 'Ahead of pace'} — ${fmt(last.actual)} vs. ${fmt(last.planned)} planned by ${last.label}.`
+                  : `⚠️ ${isPot ? 'Burning faster than planned' : 'Behind pace'} — ${fmt(last.actual)} vs. ${fmt(last.planned)} planned by ${last.label}.`}
+              </p>
+            )
+          })()}
         </div>
       )}
 
@@ -570,6 +689,67 @@ export default function PlanPage() {
           )}
         </div>
       </div>
+
+      {/* What-if explorer */}
+      {whatIf && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <p className="text-sm font-semibold text-slate-700">What if…</p>
+          <p className="text-xs text-slate-400 mt-0.5 mb-4">
+            See how a change in one category would have played out over your {whatIf.n} tracked month{whatIf.n === 1 ? '' : 's'}.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700 mb-4">
+            <span>I spent</span>
+            <span className={`font-semibold ${wiDelta < 0 ? 'text-green-600' : wiDelta > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+              {wiDelta === 0 ? 'the same' : `${fmt0(Math.abs(wiDelta))} ${wiDelta < 0 ? 'less' : 'more'}`}
+            </span>
+            <span>per month on</span>
+            <select
+              value={wiCat}
+              onChange={(e) => setWiCat(e.target.value as Category)}
+              className="px-2 py-1 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {wiCategories.map((c) => (
+                <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+          </div>
+
+          <input
+            type="range" min={-200} max={200} step={10}
+            value={wiDelta}
+            onChange={(e) => setWiDelta(parseInt(e.target.value))}
+            className="w-full accent-indigo-600"
+          />
+          <div className="flex justify-between text-xs text-slate-400 mt-1">
+            <span>−$200/mo</span>
+            <button onClick={() => setWiDelta(0)} className="hover:text-slate-600 underline">reset</button>
+            <span>+$200/mo</span>
+          </div>
+
+          {wiDelta !== 0 && (
+            <div className="mt-4 bg-slate-50 rounded-lg px-4 py-3 space-y-1">
+              <p className="text-sm text-slate-700">
+                You'd have{' '}
+                <span className={`font-semibold ${whatIf.saved >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {whatIf.saved >= 0 ? `saved ${fmt(whatIf.saved)} more` : `spent ${fmt(-whatIf.saved)} more`}
+                </span>{' '}
+                over those {whatIf.n} month{whatIf.n === 1 ? '' : 's'}.
+              </p>
+              <p className="text-xs text-slate-500">
+                {CATEGORY_LABELS[wiCat]} would have averaged {fmt(whatIf.newMonthlyAvg)}/mo
+                {(() => {
+                  const diff = whatIf.plannedMonthly - whatIf.newMonthlyAvg
+                  if (Math.abs(diff) < 0.5) return ' — right on budget.'
+                  return diff > 0
+                    ? ` — ${fmt(diff)} under your ${fmt(whatIf.plannedMonthly)} budget.`
+                    : ` — still ${fmt(-diff)} over your ${fmt(whatIf.plannedMonthly)} budget.`
+                })()}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
