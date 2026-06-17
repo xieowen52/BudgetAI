@@ -149,6 +149,7 @@ export default function TransactionsPage() {
 
   // Recurring templates
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([])
+  const [recurringLoaded, setRecurringLoaded] = useState(false)
   const [showRecurringForm, setShowRecurringForm] = useState(false)
   const [recForm, setRecForm] = useState({
     amount: '', category: 'housing', description: '', transaction_type: 'expense' as TxType, day_of_month: 1,
@@ -164,7 +165,9 @@ export default function TransactionsPage() {
   }
 
   function fetchRecurring() {
-    api.get<RecurringTransaction[]>('/recurring/').then((r) => setRecurring(r.data))
+    api.get<RecurringTransaction[]>('/recurring/')
+      .then((r) => setRecurring(r.data))
+      .finally(() => setRecurringLoaded(true))
   }
 
   useEffect(() => {
@@ -485,7 +488,9 @@ export default function TransactionsPage() {
           </form>
         )}
 
-        {recurring.length === 0 ? (
+        {!recurringLoaded ? (
+          <p className="px-6 py-5 text-sm text-slate-400">Loading…</p>
+        ) : recurring.length === 0 ? (
           <p className="px-6 py-5 text-sm text-slate-400">
             Nothing recurring yet. Add rent or a subscription and it'll log itself every month.
           </p>

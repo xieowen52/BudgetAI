@@ -219,7 +219,14 @@ export default function DashboardPage() {
     { income: 0, expenses: 0 }
   )
   const net = summary.income - summary.expenses
-  const savingsRate = summary.income > 0 ? ((net / summary.income) * 100).toFixed(0) : null
+  // Cap the displayed rate — a single large expense can drive it to absurd
+  // values (e.g. -370365%) that are technically correct but useless (D-1).
+  const savingsRateNum = summary.income > 0 ? (net / summary.income) * 100 : null
+  const savingsRate =
+    savingsRateNum === null ? null
+    : savingsRateNum < -999 ? '< −999'
+    : savingsRateNum > 999 ? '> 999'
+    : savingsRateNum.toFixed(0)
 
   const byCategory = Object.values(
     transactions
