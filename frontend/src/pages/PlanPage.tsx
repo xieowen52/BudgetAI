@@ -184,9 +184,27 @@ export default function PlanPage() {
   const start = new Date(plan.start_date + 'T00:00:00')
   const lastMonth = plan.months[plan.months.length - 1]
   const month = plan.months[selectedMonth]
-  const monthHasEvents = plan.events.some((ev) => {
-    return ev.funding === 'absorb' ? ev.month_index === selectedMonth : ev.month_index >= selectedMonth
+  // An event touches a month if it's absorbed there, or if it's a "spread"
+  // event the user is still saving up for (this month is at or before it).
+  const eventAffectsMonth = (ev: Plan['events'][number], i: number) =>
+    ev.funding === 'absorb' ? ev.month_index === i : ev.month_index >= i
+  const monthsWithEventImpact = new Set<number>()
+  plan.events.forEach((ev) => {
+    for (let i = 0; i < plan.horizon_months; i++) {
+      if (eventAffectsMonth(ev, i)) monthsWithEventImpact.add(i)
+    }
   })
+  // Specific, per-event explanation of why the selected month differs (P-2)
+  const selectedMonthEventNotes = plan.events
+    .filter((ev) => eventAffectsMonth(ev, selectedMonth))
+    .map((ev) => {
+      const eventMonthLabel = MONTHS[plan.months[ev.month_index].month - 1]
+      if (ev.month_index === selectedMonth) {
+        return `${CATEGORY_ICONS[ev.category]} ${ev.name} — ${fmt(ev.amount)} ${ev.funding === 'absorb' ? 'absorbed this month' : 'lands this month'}`
+      }
+      const perMonth = ev.amount / (ev.month_index + 1)
+      return `${CATEGORY_ICONS[ev.category]} Setting aside ${fmt(perMonth)}/mo toward ${ev.name} (${eventMonthLabel})`
+    })
   const { summary } = plan
   const isPot = plan.funding_mode === 'pot'
   const horizon = plan.horizon_months
@@ -368,13 +386,21 @@ export default function PlanPage() {
               <button
                 key={m.month_index}
                 onClick={() => setSelectedMonth(m.month_index)}
-                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                className={`relative px-2 py-1 rounded text-xs font-medium transition-colors ${
                   m.month_index === selectedMonth
                     ? 'bg-indigo-600 text-white'
                     : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >
                 {MONTHS[m.month - 1]}
+                {monthsWithEventImpact.has(m.month_index) && (
+                  <span
+                    className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${
+                      m.month_index === selectedMonth ? 'bg-white' : 'bg-indigo-400'
+                    }`}
+                    title="Adjusted for a one-time event"
+                  />
+                )}
               </button>
             ))}
           </div>
@@ -394,13 +420,13 @@ export default function PlanPage() {
             </div>
           ))}
         </div>
-        <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-500 space-x-2">
+        <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
           {month.unallocated > 0 && (
-            <span>💡 {fmt(month.unallocated)} unassigned buffer this month.</span>
+            <p>💡 {fmt(month.unallocated)} unassigned buffer this month.</p>
           )}
-          {monthHasEvents && (
-            <span className="text-indigo-600">Adjusted for your planned events.</span>
-          )}
+          {selectedMonthEventNotes.map((note, i) => (
+            <p key={i} className="text-indigo-600">{note}</p>
+          ))}
         </div>
       </div>
 
@@ -752,7 +778,10 @@ export default function PlanPage() {
                 <span className={`font-semibold ${whatIf.saved >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                   {whatIf.saved >= 0 ? `saved ${fmt(whatIf.saved)} more` : `spent ${fmt(-whatIf.saved)} more`}
                 </span>{' '}
-                over those {whatIf.n} month{whatIf.n === 1 ? '' : 's'}.
+                over those {whatIf.n} month{whatIf.n === 1 ? '' : 's'}
+                {whatIf.n > 1 && (
+                  <span className="text-slate-400"> — about {fmt(Math.abs(whatIf.saved) / whatIf.n)}/mo</span>
+                )}.
               </p>
               <p className="text-xs text-slate-500">
                 {CATEGORY_LABELS[wiCat]} would have averaged {fmt(whatIf.newMonthlyAvg)}/mo

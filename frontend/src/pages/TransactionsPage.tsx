@@ -11,6 +11,15 @@ function ordinal(n: number) {
   return `${n}${suffix}`
 }
 
+function relativeDays(isoDate: string): string {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(isoDate + 'T00:00:00')
+  const days = Math.round((target.getTime() - today.getTime()) / 86400000)
+  if (days <= 0) return 'due now'
+  if (days === 1) return 'tomorrow'
+  return `in ${days} days`
+}
+
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
@@ -324,6 +333,10 @@ export default function TransactionsPage() {
     )
   })
 
+  // Totals for the active search, so a category/date filter shows its sum (UI#9)
+  const searchSpent = filtered.filter((t) => t.transaction_type === 'expense').reduce((s, t) => s + t.amount, 0)
+  const searchIncome = filtered.filter((t) => t.transaction_type === 'income').reduce((s, t) => s + t.amount, 0)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -516,7 +529,7 @@ export default function TransactionsPage() {
                       {r.description || <span className="text-slate-400 italic">No description</span>}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {r.transaction_type === 'income' ? 'Income' : CATEGORY_LABELS[r.category]} · the {ordinal(r.day_of_month)} of every month · next {r.next_date}
+                      {r.transaction_type === 'income' ? 'Income' : CATEGORY_LABELS[r.category]} · the {ordinal(r.day_of_month)} of every month · next {r.next_date} ({relativeDays(r.next_date)})
                     </p>
                   </div>
                 </div>
@@ -550,6 +563,13 @@ export default function TransactionsPage() {
             className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
           />
         </div>
+        {search.trim() && filtered.length > 0 && (
+          <p className="px-6 py-2 text-xs text-slate-500 bg-slate-50/60 border-b border-slate-100">
+            {filtered.length} match{filtered.length === 1 ? '' : 'es'}
+            {searchSpent > 0 && <> · {fmt(searchSpent)} spent</>}
+            {searchIncome > 0 && <> · {fmt(searchIncome)} in</>}
+          </p>
+        )}
 
         {loading ? (
           <div className="divide-y divide-slate-100">
