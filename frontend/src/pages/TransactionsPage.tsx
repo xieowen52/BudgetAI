@@ -4,6 +4,7 @@ import {
   type Transaction, type ParsedTransaction, type RecurringTransaction,
   CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS,
 } from '../types'
+import { useConfirm } from '../components/ConfirmProvider'
 
 function ordinal(n: number) {
   const suffix = n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'
@@ -127,6 +128,7 @@ function TxFormFields({
 }
 
 export default function TransactionsPage() {
+  const confirm = useConfirm()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -207,7 +209,11 @@ export default function TransactionsPage() {
   }
 
   async function deleteRecurring(r: RecurringTransaction) {
-    if (!confirm(`Stop the recurring "${r.description || CATEGORY_LABELS[r.category]}"? Already-posted transactions are kept.`)) return
+    if (!(await confirm({
+      title: `Stop the recurring "${r.description || CATEGORY_LABELS[r.category]}"?`,
+      message: 'Already-posted transactions are kept.',
+      confirmLabel: 'Stop', destructive: true,
+    }))) return
     await api.delete(`/recurring/${r.id}`)
     fetchRecurring()
   }
@@ -303,7 +309,7 @@ export default function TransactionsPage() {
   }
 
   async function deleteTransaction(id: string) {
-    if (!confirm('Delete this transaction?')) return
+    if (!(await confirm({ title: 'Delete this transaction?', confirmLabel: 'Delete', destructive: true }))) return
     await api.delete(`/transactions/${id}`)
     setTransactions((prev) => prev.filter((t) => t.id !== id))
   }

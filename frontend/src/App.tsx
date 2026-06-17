@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ConfirmProvider } from './components/ConfirmProvider'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
@@ -20,6 +21,7 @@ function HomeRedirect() {
 export default function App() {
   return (
     <AuthProvider>
+      <ConfirmProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<HomeRedirect />} />
@@ -41,6 +43,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ConfirmProvider>
     </AuthProvider>
   )
 }

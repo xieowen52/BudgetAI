@@ -9,6 +9,7 @@ import {
   type Transaction, type PlanStatus, CATEGORY_COLORS, CATEGORY_LABELS, CATEGORY_ICONS,
   type Category, CATEGORIES,
 } from '../types'
+import { useConfirm } from '../components/ConfirmProvider'
 
 type ChartType = 'bar' | 'pie' | 'donut'
 
@@ -133,6 +134,7 @@ function QuickAddModal({ defaultType, onClose, onSaved }: QuickAddModalProps) {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -152,8 +154,11 @@ export default function DashboardPage() {
   }
 
   async function loadDemo() {
-    if (allTransactions.length > 0 &&
-        !confirm('This replaces your current data with a sample financial history. Continue?')) return
+    if (allTransactions.length > 0 && !(await confirm({
+      title: 'Load sample data?',
+      message: 'This replaces your current transactions and plan with a demo financial history.',
+      confirmLabel: 'Replace with demo', destructive: true,
+    }))) return
     setDemoBusy(true)
     try {
       await api.post('/demo/seed')
@@ -164,7 +169,11 @@ export default function DashboardPage() {
   }
 
   async function clearAll() {
-    if (!confirm('Delete all your transactions, plan, and recurring items? This cannot be undone.')) return
+    if (!(await confirm({
+      title: 'Clear everything?',
+      message: 'Deletes all your transactions, plan, budgets, and recurring items. This cannot be undone.',
+      confirmLabel: 'Clear everything', destructive: true,
+    }))) return
     setDemoBusy(true)
     try {
       await api.delete('/demo/clear')

@@ -1,12 +1,14 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import api from '../api/client'
 import { type Budget, type BudgetProgress, CATEGORIES, CATEGORY_LABELS, type Category } from '../types'
+import { useConfirm } from '../components/ConfirmProvider'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
 export default function BudgetsPage() {
+  const confirm = useConfirm()
   const [progress, setProgress] = useState<BudgetProgress[]>([])
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,7 +53,10 @@ export default function BudgetsPage() {
   }
 
   async function deleteBudget(cat: Category) {
-    if (!confirm(`Remove budget limit for ${CATEGORY_LABELS[cat]}?`)) return
+    if (!(await confirm({
+      title: `Remove the ${CATEGORY_LABELS[cat]} budget limit?`,
+      confirmLabel: 'Remove', destructive: true,
+    }))) return
     await api.delete(`/budgets/${cat}`)
     fetchData()
   }

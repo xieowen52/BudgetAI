@@ -4,6 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import api from '../api/client'
+import { useConfirm } from '../components/ConfirmProvider'
 import {
   CATEGORIES,
   CATEGORY_ICONS,
@@ -26,6 +27,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default function PlanPage() {
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const [plan, setPlan] = useState<Plan | null>(null)
   const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
@@ -78,7 +80,11 @@ export default function PlanPage() {
   }, [])
 
   async function deletePlan() {
-    if (!confirm('Delete this plan? Your transactions are not affected.')) return
+    if (!(await confirm({
+      title: 'Delete this plan?',
+      message: 'Your transactions are not affected.',
+      confirmLabel: 'Delete', destructive: true,
+    }))) return
     await api.delete('/plans/current')
     setPlan(null)
     setAnalysis(null)
@@ -127,7 +133,11 @@ export default function PlanPage() {
   }
 
   async function deleteIncomeChange(id: string) {
-    if (!confirm('Remove this income change? Affected months go back to the regular amount.')) return
+    if (!(await confirm({
+      title: 'Remove this income change?',
+      message: 'Affected months go back to the regular amount.',
+      confirmLabel: 'Remove', destructive: true,
+    }))) return
     try {
       await api.delete(`/plans/income-changes/${id}`)
       const res = await api.get<Plan>('/plans/current')
@@ -139,7 +149,11 @@ export default function PlanPage() {
   }
 
   async function deleteEvent(id: string, name: string) {
-    if (!confirm(`Remove "${name}"? Affected months go back to the regular budget.`)) return
+    if (!(await confirm({
+      title: `Remove "${name}"?`,
+      message: 'Affected months go back to the regular budget.',
+      confirmLabel: 'Remove', destructive: true,
+    }))) return
     await api.delete(`/plans/events/${id}`)
     const res = await api.get<Plan>('/plans/current')
     setPlan(res.data)
@@ -235,8 +249,12 @@ export default function PlanPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              if (confirm('Start a new plan? This replaces your current plan once you finish the wizard. Your transactions are not affected.')) {
+            onClick={async () => {
+              if (await confirm({
+                title: 'Start a new plan?',
+                message: 'This replaces your current plan once you finish the wizard. Your transactions are not affected.',
+                confirmLabel: 'Start over',
+              })) {
                 navigate('/plan/new')
               }
             }}
